@@ -1,0 +1,18 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+.playwright*
+extracted-files*
+.browser*
+.tmp*
+system-chrome-profile*
+manual-test-profile*
+minimal*
+browser_use*
