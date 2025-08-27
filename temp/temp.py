@@ -20,7 +20,7 @@ Laminar.initialize(project_api_key="tY4nwVIe2BZHVgMQfaVsBXmtLHSBiDF7U7W9FCSumGXX
 
 # Initialize OpenRouter with any model available on their platform
 llm = ChatOpenRouter(
-    model='deepseek/deepseek-r1-0528-qwen3-8b:free',  # or any model available on OpenRouter
+    model='deepseek/deepseek-chat-v3.1',  # or any model available on OpenRouter
     api_key=os.getenv('OPENROUTER_API_KEY'),
     temperature=0.7,
 )
@@ -54,7 +54,7 @@ class ResultItem(BaseModel):
     content: dict | None = None
 
 class AgentOutput(BaseModel):
-    results: list[ResultItem]
+    results: list[ResultJob]
 
 # Don't use Controller with output_model - it conflicts with agent actions
 # controller = Controller(output_model=AgentOutput)
@@ -129,39 +129,38 @@ async def run_agent(url, task):
         browser_profile=bp,
         initial_actions=initial_actions,
         controller=controller,
-        output_model_schema=AgentOutput
+        output_model_schema=AgentOutput,
+        llm_timeout=120
     )
 
     try:
         history = await agent.run()
-        # Since we removed output_model, the agent won't return structured JSON
-        # Instead, let's create a simple result based on task completion
         result = history.final_result()
         if result:
             parsed: AgentOutput = AgentOutput.model_validate_json(result)
 
-            for res in parsed.results:
-                print('\n--------------------------------')
-                print(f'has_jobs:            {res.has_jobs}')
-                print(f'status:              {res.status}')
-                print(f'page_link:         {res.page_link}')
-                print(f'content:             {res.content}')
+            for job in parsed.results:
+                print('\n\n--------------------------------')
+                print(f'job_title:            {job.job_title}')
+                print(f'company_url:              {job.company_url}')
+                print(f'location:         {job.location}')
+                print(f'url:             {job.url}')
+    
         else:
             print('No result')
 
-        return [result]
+        return {
+            "has_jobs": True,
+            "jobs": parsed.results,
+            "url": url
+        };
     except Exception as e:
         print(f"Agent failed with error: {e}")
-        return [{
-            "page_link": url,
-            "query": f"Job search for {url}",
-            "source_file": None,
-            "status": "failed",
+        return {
             "has_jobs": False,
             "jobs": [],
-            "jobs_from_snippet": [],
-            "content": {"error": str(e)}
-        }]
+            "url": url
+        }
 
 if __name__ == "__main__":
     # Read and print companies list
@@ -178,30 +177,29 @@ if __name__ == "__main__":
 
         url = company['url']
 
-        results = asyncio.run(run_agent(url, f'''
-            Goal: find if {url} has open job listings.
-            - Navigate to the careers/jobs/join-us page via header/footer/nav or search.
+        # results = asyncio.run(run_agent(url, f'''
+        #     Goal: find if {url} has open job listings.
+        #     - Navigate to the careers/jobs/join-us page via header/footer/nav or search.
+        #     - Confirm it's a jobs page (scroll if needed).
+        #     - Extract all matching roles: Web, Fullstack, Backend, Software (Engineer or Developer).
+        #     - Look for job titles, locations, and URLs.
+        #     - Complete the task when you find job listings or confirm none exist.
+        # '''))
+
+        result = asyncio.run(run_agent(url, f'''
+            Goal: go to https://jobs.ashbyhq.com/1password
             - Confirm it's a jobs page (scroll if needed).
-            - Extract all matching roles: Web, Fullstack, Backend, Software (Engineer or Developer).
+            - Extract all matching roles: Web, Fullstack, Backend, Software, Engineer, Developer.
             - Look for job titles, locations, and URLs.
-            - Complete the task when you find job listings or confirm none exist.
+            - make sure to score the page so we do not miss any job listing
         '''))
 
+
         # Print all results for now (both success and failed)
-        if results:
-            print(f"Results: {len(results)}")
-            for idx, res in enumerate(results, 1):
-                print(f"  [{idx}] Status: {res.get('status')} | Page: {res.get('page_link')}")
-                if res.get('status') == 'success':
-                    jobs = res.get('jobs') or []
-                    print(f"       Jobs found: {len(jobs)}")
-                    for j in jobs:
-                        print(f"       - {j.get('job_title')} -> {j.get('url')} (location={j.get('location')})")
-                else:
-                    print(f"       Error: {res.get('content', {}).get('error', 'Unknown error')}")
+        if result['has_jobs']:
+            print(result['jobs'])
         else:
             print("No results returned")
 
-        print("-" * 100)
 
         
