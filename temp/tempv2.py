@@ -12,12 +12,12 @@ from datetime import datetime
 import traceback
 
 # Set the environment variable so Playwright uses your custom browser path
-os.environ["PLAYWRIGHT_BROWSERS_PATH"] = "/media/mats/3c24094c-800b-4576-a390-d23a6d7a02291/workspace/test_ai_gen/browser_use/.playwright-browsers"
+# os.environ["PLAYWRIGHT_BROWSERS_PATH"] = "/media/mats/3c24094c-800b-4576-a390-d23a6d7a02291/workspace/test_ai_gen/browser_use/.playwright-browsers"
 # Read environment variables
 load_dotenv()
 
-# this line auto-instruments Browser Use and any browser you use (local or remote)
-Laminar.initialize(project_api_key="tY4nwVIe2BZHVgMQfaVsBXmtLHSBiDF7U7W9FCSumGXXfYJWcsSW3CB51yMcywZd", disable_batch=True, disabled_instruments={Instruments.BROWSER_USE})
+# # this line auto-instruments Browser Use and any browser you use (local or remote)
+# Laminar.initialize(project_api_key="tY4nwVIe2BZHVgMQfaVsBXmtLHSBiDF7U7W9FCSumGXXfYJWcsSW3CB51yMcywZd", disable_batch=True, disabled_instruments={Instruments.BROWSER_USE})
 
 # Initialize OpenRouter with any model available on their platform
 llm = ChatOpenRouter(
@@ -26,16 +26,16 @@ llm = ChatOpenRouter(
     temperature=0.7,
 )
 
-def find_chrome():
-    base_dir = os.environ["PLAYWRIGHT_BROWSERS_PATH"]
-    for name in os.listdir(base_dir):
-        if name.startswith("chromium-"):
-            chrome_path = os.path.join(base_dir, name, 'chrome-linux', 'chrome')
-            if os.path.exists(chrome_path):
-                return chrome_path
-    return None
+# def find_chrome():
+#     base_dir = os.environ["PLAYWRIGHT_BROWSERS_PATH"]
+#     for name in os.listdir(base_dir):
+#         if name.startswith("chromium-"):
+#             chrome_path = os.path.join(base_dir, name, 'chrome-linux', 'chrome')
+#             if os.path.exists(chrome_path):
+#                 return chrome_path
+#     return None
 
-CHROME_BIN = find_chrome()
+# CHROME_BIN = find_chrome()
 
 # --- Structured output schema & controller ---
 class ResultJob(BaseModel):
@@ -159,7 +159,7 @@ async def extract_job_listings(url, task):
     bp = BrowserProfile(
         viewport_size={'width': 1280, 'height': 720},
         user_data_dir="./manual-test-profile",
-        executable_path=CHROME_BIN,
+        # executable_path=CHROME_BIN,
         headless=False,  # Let's see what's happening
         chromium_sandbox=False,
         args=[
@@ -227,7 +227,7 @@ async def find_jobs_page(url, task):
     bp = BrowserProfile(
         viewport_size={'width': 1280, 'height': 720},
         user_data_dir="./manual-test-profile",
-        executable_path=CHROME_BIN,
+        # executable_path=CHROME_BIN,
         headless=False,  # Let's see what's happening
         chromium_sandbox=False,
         args=[
