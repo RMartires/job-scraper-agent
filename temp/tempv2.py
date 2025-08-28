@@ -17,7 +17,7 @@ os.environ["PLAYWRIGHT_BROWSERS_PATH"] = "/media/mats/3c24094c-800b-4576-a390-d2
 load_dotenv()
 
 # this line auto-instruments Browser Use and any browser you use (local or remote)
-Laminar.initialize(project_api_key="tY4nwVIe2BZHVgMQfaVsBXmtLHSBiDF7U7W9FCSumGXXfYJWcsSW3CB51yMcywZd", disable_batch=True, disabled_instruments={Instruments.BROWSER_USE})
+Laminar.initialize(project_api_key=os.getenv('LMNR_PROJECT_API_KEY'), disable_batch=True, disabled_instruments={Instruments.BROWSER_USE})
 
 # Initialize OpenRouter with any model available on their platform
 llm = ChatOpenRouter(
@@ -61,7 +61,7 @@ def init_mongodb():
     """Initialize MongoDB connection and return collection"""
     try:
         # Connect to MongoDB (adjust connection string as needed)
-        client = MongoClient('mongodb+srv://rohit:1SJc7y1bNZndSsUC@cluster0.3g41pmp.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0')
+        client = MongoClient(os.getenv('MONGO_DB_URI'))
         db = client['job_scraper']
         collection = db['company_jobs']
         return collection
