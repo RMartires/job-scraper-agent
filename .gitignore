@@ -114,3 +114,8 @@ logs/
 # Temporary files
 temp/
 tmp/
+system-chrome-profile*
+manual-test-profile*
+minimal*
+browser_use*
+.browser*
