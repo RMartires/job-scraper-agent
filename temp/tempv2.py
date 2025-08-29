@@ -21,7 +21,8 @@ Laminar.initialize(project_api_key=os.getenv('LMNR_PROJECT_API_KEY'), disable_ba
 
 # Initialize OpenRouter with any model available on their platform
 llm = ChatOpenRouter(
-    model='deepseek/deepseek-chat-v3.1',
+    # model='mistralai/mistral-small-3.2-24b-instruct:free',
+    model='deepseek/deepseek-r1:free',
     api_key=os.getenv('OPENROUTER_API_KEY'),
     temperature=0.7,
 )
