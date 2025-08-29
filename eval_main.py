@@ -1,3 +1,4 @@
+import json
 from deepeval.dataset import EvaluationDataset
 from deepeval.test_case import LLMTestCase
 from deepeval.metrics import AnswerRelevancyMetric
@@ -18,59 +19,28 @@ def create_test_dataset():
     """Create a simple test dataset for job scraping evaluation"""
     test_cases = [
         {
-            "input": "https://www.google.com/careers",
-            "expected_output": "Should find if the site has a jobs / careers page",
+            "has_job_page_input": "https://www.google.com/careers",
+            "extract_jobs_listings_input": "https://www.google.com/careers",
+            "has_job_page_expected_output": "Should find if the site has a jobs / careers page",
+            "extract_jobs_listings_output": "Should return a list of jobs with url, location and title fields",
             "description": "Test Google careers page for job listings"
         },
-        # {
-        #     "input": "https://www.microsoft.com/careers",
-        #     "expected_output": "Should find job listings or careers page", 
-        #     "description": "Test Microsoft careers page for job listings"
-        # },
-        # {
-        #     "input": "https://www.apple.com/jobs",
-        #     "expected_output": "Should find job listings or careers page",
-        #     "description": "Test Apple jobs page for job listings"
-        # }
+        {   
+            "has_job_page_input": "https://www.datarobot.com",    
+            "extract_jobs_listings_input": "https://www.datarobot.com/careers/open-positions/",
+            "has_job_page_expected_output": "Should find if the site has a jobs / careers page",
+            "extract_jobs_listings_output": "Should return a list of jobs with url, location and title fields",
+            "description": "Test datarobot careers page for job listings"
+        },
+        {
+            "has_job_page_input": "https://www.cencora.com",    
+            "extract_jobs_listings_input": "https://careers.cencora.com/us/en",
+            "has_job_page_expected_output": "Should find if the site has a jobs / careers page",
+            "extract_jobs_listings_output": "Should return a list of jobs with url, location and title fields",
+            "description": "Test Apple jobs page for job listings"
+        }
     ]
     return test_cases
-
-async def llm_app(input_url):
-    """Your LLM app function that processes a URL and returns job listings"""
-    try:
-        # First, try to find the jobs page
-        jobs_page_result = await find_jobs_page(input_url, f'''
-            Goal: find if {input_url} has open job listings page
-            - Navigate to the careers/jobs/join-us page via header/footer/nav or search.
-            - Confirm it's a jobs page (scroll if needed). you should see a list of job listings
-            - if it exists return the url of the jobs page
-        ''')
-
-        # Convert the result to a string for evaluation
-        if jobs_page_result['has_jobs_page']:
-            return f"jobs_page_url: {jobs_page_result['jobs_page_url']}, has_jobs_page: {jobs_page_result['has_jobs_page']}"
-        else:
-            return "jobs_page_url: '', has_jobs_page: False"
-        
-        # if jobs_page_result['has_jobs_page'] and jobs_page_result['jobs_page_url']:
-        #     # If jobs page found, extract job listings
-        #     job_listings_result = await extract_job_listings(jobs_page_result['jobs_page_url'], f'''
-        #         Goal: find if {jobs_page_result['jobs_page_url']} 
-        #         - Confirm it's a jobs page (scroll if needed).
-        #         - Extract all matching roles: Web, Fullstack, Backend, Software (Engineer or Developer).
-        #         - Look for job titles, locations, and URLs.
-        #         - Complete the task when you find job listings or confirm none exist.
-        #     ''')
-            
-        #     if job_listings_result['has_jobs']:
-        #         return f"Found {len(job_listings_result['jobs'])} job listings on {input_url}"
-        #     else:
-        #         return f"No job listings found on {input_url}"
-        # else:
-        #     return f"No jobs page found for {input_url}"
-            
-    except Exception as e:
-        return f"Error processing {input_url}: {str(e)}"
 
 async def main():
     print("🚀 Starting LLM Evaluation for Job Scraping")
@@ -126,20 +96,33 @@ async def main():
     
     # Convert test data into test cases
     for test_item in test_data:
-        print(f"   Processing: {test_item['input']}")
+        print(f"   Processing: {test_item['has_job_page_input']}")
         
         # Get actual output from your LLM app
-        actual_output = await llm_app(test_item['input'])
-        
+        fjp_output = await find_jobs_page(test_item['has_job_page_input'], return_string=True)
+
+
         # Create test case
-        test_case = LLMTestCase(
-            input=test_item['input'],
-            actual_output=actual_output,
-            expected_output=test_item['expected_output']
+        fjp_test_case = LLMTestCase(
+            input=test_item['has_job_page_input'],
+            actual_output=fjp_output,
+            expected_output=test_item['has_job_page_expected_output']
+        )
+
+        print(f"   Processing: {test_item['extract_jobs_listings_input']}")
+
+        ejl_output = await extract_job_listings(test_item['extract_jobs_listings_input'], return_string=True)
+
+        # Create test case
+        ejl_test_case = LLMTestCase(
+            input=test_item['extract_jobs_listings_input'],
+            actual_output=ejl_output,
+            expected_output=test_item['extract_jobs_listings_output']
         )
         
         # Add to dataset
-        dataset.add_test_case(test_case)
+        dataset.add_test_case(fjp_test_case)
+        dataset.add_test_case(ejl_test_case)
     
     # Step 4: Run evaluation
     print("4. Running evaluation...")

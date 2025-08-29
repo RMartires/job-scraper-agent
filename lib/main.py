@@ -1,3 +1,4 @@
+import json
 from browser_use import Agent, BrowserSession, Controller
 from browser_use.browser import BrowserProfile
 import asyncio
@@ -10,6 +11,10 @@ from lmnr import Laminar, Instruments
 from pymongo import MongoClient
 from datetime import datetime
 import traceback
+import logging
+
+from sentry_sdk.utils import json_dumps
+logging.getLogger('pymongo').setLevel(logging.WARNING)
 
 # Set the environment variable so Playwright uses your custom browser path
 os.environ["PLAYWRIGHT_BROWSERS_PATH"] = "/media/mats/3c24094c-800b-4576-a390-d23a6d7a02291/workspace/test_ai_gen/browser_use/.playwright-browsers"
@@ -17,7 +22,7 @@ os.environ["PLAYWRIGHT_BROWSERS_PATH"] = "/media/mats/3c24094c-800b-4576-a390-d2
 load_dotenv()
 
 # this line auto-instruments Browser Use and any browser you use (local or remote)
-Laminar.initialize(project_api_key=os.getenv('LMNR_PROJECT_API_KEY'), disable_batch=True, disabled_instruments={Instruments.BROWSER_USE})
+# Laminar.initialize(project_api_key=os.getenv('LMNR_PROJECT_API_KEY'), disable_batch=True, disabled_instruments={Instruments.BROWSER_USE})
 
 # Initialize OpenRouter with any model available on their platform
 llm = ChatOpenRouter(
@@ -115,7 +120,7 @@ def read_companies_list():
     companies = []
     
     try:
-        with open('temp/companies_list.md', 'r', encoding='utf-8') as file:
+        with open('lib/companies_list.md', 'r', encoding='utf-8') as file:
             lines = file.readlines()
             
         for line in lines:
@@ -148,7 +153,14 @@ def read_companies_list():
         
     return companies
 
-async def extract_job_listings(url, task):
+async def extract_job_listings(url, return_string=False):
+    task = f'''
+            Goal: find if {url} 
+            - Confirm it's a jobs page (scroll if needed).
+            - Extract all matching roles: Web, Fullstack, Backend, Software (Engineer or Developer).
+            - Look for job titles, locations, and URLs.
+            - Complete the task when you find job listings or confirm none exist.
+        '''
     print("Current task: ", task)
     
     # Define initial actions to navigate to Google first
@@ -195,28 +207,24 @@ async def extract_job_listings(url, task):
     
         else:
             print('No result')
-            return {
-                "has_jobs": False,
-                "jobs": [],
-                "url": url
-            }
+            return []
+        
+        if return_string:
+            return json.dumps(parsed.model_dump_json())
 
-        return {
-            "has_jobs": True,
-            "jobs": parsed.results,
-            "url": url
-        }
+        return parsed.results
     except Exception as e:
         print(f"Agent failed with error: {e}")
         traceback.print_exc()
-        return {
-            "has_jobs": False,
-            "jobs": [],
-            "url": url,
-            "error": str(e)
-        }
+        return []
 
-async def find_jobs_page(url, task):
+async def find_jobs_page(url, return_string=False):
+    task = f'''
+            Goal: find if {url} has open job listings page
+            - Navigate to the careers/jobs/join-us page via header/footer/nav or search.
+            - Confirm it's a jobs page (scroll if needed). you should see a list of job listings
+            - if it exisits return the url of the jobs page
+            '''
     print("Current task: ", task)
     
     # Define initial actions to navigate to Google first
@@ -260,18 +268,15 @@ async def find_jobs_page(url, task):
     
         else:
             print('No result')
+            
+        if return_string:
+           return json.dumps(parsed.model_dump_json()) 
 
-        return {
-            "has_jobs_page": parsed.has_jobs_page,
-            "jobs_page_url": parsed.jobs_page_url
-        }
+        return parsed
     except Exception as e:
         print(f"Agent failed with error: {e}")
         traceback.print_exc()
-        return {
-            "has_jobs_page": False,
-            "jobs_page_url": None
-        }
+        return None
 
 
 if __name__ == "__main__":
@@ -300,60 +305,43 @@ if __name__ == "__main__":
         try:
             save_company_result(collection, company_name, url, 'find_jobs_page_progress')
 
-            result = asyncio.run(find_jobs_page(url, f'''
-                Goal: find if {url} has open job listings page
-                - Navigate to the careers/jobs/join-us page via header/footer/nav or search.
-                - Confirm it's a jobs page (scroll if needed). you should see a list of job listings
-                - if it exisits return the url of the jobs page
-            '''))
+            result = asyncio.run(find_jobs_page(url))
 
-            # Print all results for now (both success and failed)
-            if result['has_jobs_page']:
+            if result and result.has_jobs_page:
                 print(f"Found jobs page for {company_name}")
-                print(result['jobs_page_url'])
-                # Save progress - found jobs page
+                print(result.jobs_page_url)
                 save_company_result(collection, company_name, url, 'find_jobs_page_complete', 
                                   jobs=[], 
-                                  has_job_page=result['has_jobs_page'], 
-                                  jobs_page_url=result['jobs_page_url'])
+                                  has_job_page=result.has_jobs_page, 
+                                  jobs_page_url=result.jobs_page_url)
             else:
                 print("No jobs page found")
-                # Save as complete but no jobs page found
                 save_company_result(collection, company_name, url, 'find_jobs_page_not_found', 
                                   jobs=[], 
-                                  has_job_page=result['has_jobs_page'], 
+                                  has_job_page=result.has_jobs_page, 
                                   error_message='No jobs page found')
 
         except Exception as e:
             print(f"Failed to process {company_name}: {e}")
             traceback.print_exc()
-            # Save as failed
             save_company_result(collection, company_name, url, 'find_jobs_page_failed', error_message=str(e)) 
 
-        if result['has_jobs_page'] and result['jobs_page_url']:
+        if result.has_jobs_page and result.jobs_page_url:
+            # step 2
             try:
                 save_company_result(collection, company_name, url, 'extract_job_listings_progress')
 
-                result = asyncio.run(extract_job_listings(url, f'''
-                    Goal: find if {result['jobs_page_url']} 
-                    - Confirm it's a jobs page (scroll if needed).
-                    - Extract all matching roles: Web, Fullstack, Backend, Software (Engineer or Developer).
-                    - Look for job titles, locations, and URLs.
-                    - Complete the task when you find job listings or confirm none exist.
-                '''))
+                result = asyncio.run(extract_job_listings(result.jobs_page_url))
 
-                # Print all results for now (both success and failed)
-                if result['has_jobs']:
-                    print(f"Found {len(result['jobs'])} jobs for {company_name}")
-                    save_company_result(collection, company_name, url, 'extract_job_listings_complete', [job.model_dump() for job in result['jobs']])
+                if len(result) > 0:
+                    print(f"Found {len(result)} jobs for {company_name}")
+                    save_company_result(collection, company_name, url, 'extract_job_listings_complete', [job.model_dump() for job in result])
                 else:
                     print("No results returned")
-                    # Save as complete but no jobs found
                     error_msg = result.get('error', 'No jobs found')
                     save_company_result(collection, company_name, url, 'extract_job_listings_no_jobs_found', [], error_msg)
 
             except Exception as e:
                 print(f"Failed to process {company_name}: {e}")
                 traceback.print_exc()
-                # Save as failed
                 save_company_result(collection, company_name, url, 'extract_job_listings_failed', error_message=str(e)) 
