@@ -2,7 +2,7 @@ import json
 from deepeval.dataset import EvaluationDataset
 from deepeval.test_case import LLMTestCase
 from deepeval.metrics import AnswerRelevancyMetric
-from deepeval.models import GeminiModel
+from deepeval.models import GeminiModel, LocalModel
 from deepeval import evaluate
 import asyncio
 import os
@@ -60,11 +60,17 @@ async def main():
     # Configure deepeval to use OpenRouter for evaluation
     try:
         # Method 1: Try using DeepSeekModel with correct model name
-        eval_llm = GeminiModel(
-            model_name="gemini-2.0-flash",  # Use the correct model name from deepeval
-            api_key=os.getenv('GOOGLE_API_KEY')
+        # eval_llm = GeminiModel(
+        #     model_name="gemini-2.0-flash",  # Use the correct model name from deepeval
+        #     api_key=os.getenv('GOOGLE_API_KEY')
+        # )
+
+        eval_llm = LocalModel(
+            model="deepseek/deepseek-r1:free",              # OpenRouter model name
+            base_url="https://openrouter.ai/api/v1",        # OpenRouter API endpoint (from docs)
+            api_key=os.getenv('OPENROUTER_API_KEY'),        # Your OpenRouter API key
+            temperature=0.7                                 # Low temperature for consistent evaluation
         )
-        
         # Create metric with the configured LLM
         relevancy = AnswerRelevancyMetric(model=eval_llm)
         print("✅ Successfully configured GeminiModel for evaluation")
