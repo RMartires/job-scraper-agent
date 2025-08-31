@@ -88,7 +88,29 @@ class DeepEvalJobScrapingEvaluator:
                 "expected_has_jobs": True,
                 "expected_jobs_url": "https://github.com/about/careers",
                 "category": "dev_platform"
+            },
+            {
+                "name": "cencora",
+                "url": "https://www.cencora.com",
+                "expected_has_jobs": True,
+                "expected_jobs_url": "https://careers.cencora.com/us/en",
+                "category": "dev_platform"
+            },
+            {
+                "name": "brainstormforce",
+                "url": "https://brainstormforce.com",
+                "expected_has_jobs": True,
+                "expected_jobs_url": "https://brainstormforce.com/join/",
+                "category": "dev_platform"
+            },
+                        {
+                "name": "buffer",
+                "url": "https://buffer.com",
+                "expected_has_jobs": True,
+                "expected_jobs_url": "https://buffer.com/journey",
+                "category": "dev_platform"
             }
+
         ]
         return test_companies
 
@@ -111,7 +133,7 @@ class DeepEvalJobScrapingEvaluator:
             print("🧹 Cleared previous evaluation results")
         
         # Use the existing batch processing from main.py
-        batch_size = 2  # Small batches for evaluation
+        batch_size = 3  # Small batches for evaluation
         batches = [test_companies[i:i + batch_size] for i in range(0, len(test_companies), batch_size)]
         total_batches = len(batches)
         

@@ -351,7 +351,7 @@ async def process_batch(collection, batch, batch_num, total_batches):
     print(f"{'='*80}")
     
     # Create semaphore to limit concurrent operations within the batch
-    max_concurrent_per_batch = 2  # Process up to 2 companies simultaneously per batch
+    max_concurrent_per_batch = 3  # Process up to 2 companies simultaneously per batch
     semaphore = asyncio.Semaphore(max_concurrent_per_batch)
     
     async def process_with_semaphore(company):
@@ -394,7 +394,7 @@ async def main():
         return
     
     # Process in batches
-    batch_size = 2  # Adjust based on your system resources
+    batch_size = 5  # Adjust based on your system resources
     batches = [companies[i:i + batch_size] for i in range(0, len(companies), batch_size)]
     total_batches = len(batches)
     
