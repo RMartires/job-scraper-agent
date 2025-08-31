@@ -12,6 +12,7 @@ from pymongo import MongoClient
 from datetime import datetime
 import traceback
 import logging
+import uuid
 
 from sentry_sdk.utils import json_dumps
 logging.getLogger('pymongo').setLevel(logging.WARNING)
@@ -168,10 +169,14 @@ async def extract_job_listings(url, return_string=False):
         {'go_to_url': {'url': url, 'new_tab': True}},
     ]
     
+    # Create unique profile directory for this operation
+    unique_profile = f"./profiles/extract-{uuid.uuid4().hex[:8]}"
+    os.makedirs(os.path.dirname(unique_profile), exist_ok=True)
+    
     # Create working profile
     bp = BrowserProfile(
         viewport_size={'width': 1280, 'height': 720},
-        user_data_dir="./manual-test-profile",
+        user_data_dir=unique_profile,
         executable_path=CHROME_BIN,
         headless=False,  # Let's see what's happening
         chromium_sandbox=False,
@@ -232,10 +237,14 @@ async def find_jobs_page(url, return_string=False):
         {'go_to_url': {'url': url, 'new_tab': True}},
     ]
     
+    # Create unique profile directory for this operation
+    unique_profile = f"./profiles/find-{uuid.uuid4().hex[:8]}"
+    os.makedirs(os.path.dirname(unique_profile), exist_ok=True)
+    
     # Create working profile
     bp = BrowserProfile(
         viewport_size={'width': 1280, 'height': 720},
-        user_data_dir="./manual-test-profile",
+        user_data_dir=unique_profile,
         executable_path=CHROME_BIN,
         headless=False,  # Let's see what's happening
         chromium_sandbox=False,
@@ -268,6 +277,7 @@ async def find_jobs_page(url, return_string=False):
     
         else:
             print('No result')
+            return None
             
         if return_string:
            return json.dumps(parsed.model_dump_json()) 
@@ -278,70 +288,156 @@ async def find_jobs_page(url, return_string=False):
         traceback.print_exc()
         return None
 
+async def process_single_company(collection, company):
+    """Process a single company with both steps"""
+    company_name = company['name']
+    url = company['url']
+    
+    print(f"Starting processing for {company_name}")
+    
+    # Mark as in_progress before starting
+    save_company_result(collection, company_name, url, 'in_progress')
 
-if __name__ == "__main__":
+    # Step 1: Find jobs page
+    try:
+        save_company_result(collection, company_name, url, 'find_jobs_page_progress')
+        result = await find_jobs_page(url)
+
+        if result != None and result.has_jobs_page:
+            print(f"Found jobs page for {company_name}")
+            save_company_result(collection, company_name, url, 'find_jobs_page_complete', 
+                              jobs=[], 
+                              has_job_page=result.has_jobs_page, 
+                              jobs_page_url=result.jobs_page_url)
+        else:
+            print(f"No jobs page found for {company_name}")
+            save_company_result(collection, company_name, url, 'find_jobs_page_not_found', 
+                              jobs=[], 
+                              has_job_page=result.has_jobs_page if result else False, 
+                              error_message='No jobs page found')
+            return  # Exit early if no jobs page
+
+    except Exception as e:
+        print(f"Failed to find jobs page for {company_name}: {e}")
+        traceback.print_exc()
+        save_company_result(collection, company_name, url, 'find_jobs_page_failed', error_message=str(e))
+        return
+
+    # Step 2: Extract job listings (only if jobs page found)
+    if result != None and result.has_jobs_page and result.jobs_page_url:
+        try:
+            save_company_result(collection, company_name, url, 'extract_job_listings_progress')
+            job_results = await extract_job_listings(result.jobs_page_url)
+
+            if job_results != None and len(job_results) > 0:
+                print(f"Found {len(job_results)} jobs for {company_name}")
+                save_company_result(collection, company_name, url, 'extract_job_listings_complete', 
+                                  [job.model_dump() for job in job_results])
+            else:
+                print(f"No job listings found for {company_name}")
+                save_company_result(collection, company_name, url, 'extract_job_listings_no_jobs_found', 
+                                  [], 'No jobs found')
+
+        except Exception as e:
+            print(f"Failed to extract job listings for {company_name}: {e}")
+            traceback.print_exc()
+            save_company_result(collection, company_name, url, 'extract_job_listings_failed', 
+                              error_message=str(e))
+
+async def process_batch(collection, batch, batch_num, total_batches):
+    """Process a batch of companies"""
+    print(f"\n{'='*80}")
+    print(f"Processing batch {batch_num}/{total_batches} with {len(batch)} companies")
+    print(f"{'='*80}")
+    
+    # Create semaphore to limit concurrent operations within the batch
+    max_concurrent_per_batch = 2  # Process up to 2 companies simultaneously per batch
+    semaphore = asyncio.Semaphore(max_concurrent_per_batch)
+    
+    async def process_with_semaphore(company):
+        async with semaphore:
+            return await process_single_company(collection, company)
+    
+    tasks = []
+    for company in batch:
+        task = process_with_semaphore(company)
+        tasks.append(task)
+    
+    # Run all tasks in the batch concurrently
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    
+    # Handle exceptions and summary
+    successful = 0
+    failed = 0
+    for i, result in enumerate(results):
+        if isinstance(result, Exception):
+            print(f"❌ Company {batch[i]['name']} failed: {result}")
+            failed += 1
+        else:
+            successful += 1
+    
+    print(f"\nBatch {batch_num} completed: ✅ {successful} successful, ❌ {failed} failed")
+    return successful, failed
+
+async def main():
+    """Main function to orchestrate batch processing"""
     # Initialize MongoDB
     collection = init_mongodb()
     
-    # Read and print companies list
+    # Read companies list
     print("Reading companies list...")
     companies = read_companies_list()
+    print(f"Found {len(companies)} companies")
     
-    print(f"\nFound {len(companies)} companies:")
-    print("=" * 80)
+    if not companies:
+        print("No companies found to process.")
+        return
     
-    for i, company in enumerate(companies, 1):
-        print("-" * 100)
-        print(f"{i:3d}. {company['name']}")
-        print(f"     URL: {company['url']}")
-
-        company_name = company['name']
-        url = company['url']
+    # Process in batches
+    batch_size = 2  # Adjust based on your system resources
+    batches = [companies[i:i + batch_size] for i in range(0, len(companies), batch_size)]
+    total_batches = len(batches)
+    
+    print(f"\nStarting batch processing:")
+    print(f"📊 Total companies: {len(companies)}")
+    print(f"📦 Batch size: {batch_size}")
+    print(f"🔢 Total batches: {total_batches}")
+    
+    total_successful = 0
+    total_failed = 0
+    
+    start_time = datetime.utcnow()
+    
+    for i, batch in enumerate(batches, 1):
+        batch_start = datetime.utcnow()
+        successful, failed = await process_batch(collection, batch, i, total_batches)
+        batch_end = datetime.utcnow()
         
-        # Mark as in_progress before starting
-        save_company_result(collection, company_name, url, 'in_progress')
+        total_successful += successful
+        total_failed += failed
+        
+        batch_duration = (batch_end - batch_start).total_seconds()
+        print(f"⏱️  Batch {i} took {batch_duration:.1f} seconds")
+        
+        # Optional: Add delay between batches to avoid overwhelming servers
+        if i < total_batches:
+            delay = 2  # seconds
+            print(f"⏸️  Waiting {delay} seconds before next batch...")
+            await asyncio.sleep(delay)
+    
+    end_time = datetime.utcnow()
+    total_duration = (end_time - start_time).total_seconds()
+    
+    print(f"\n{'='*80}")
+    print(f"🎉 ALL BATCHES COMPLETED!")
+    print(f"{'='*80}")
+    print(f"📈 Summary:")
+    print(f"   ✅ Total successful: {total_successful}")
+    print(f"   ❌ Total failed: {total_failed}")
+    print(f"   📊 Success rate: {(total_successful/(total_successful+total_failed)*100):.1f}%")
+    print(f"   ⏱️  Total time: {total_duration:.1f} seconds")
+    print(f"   🚀 Average per company: {total_duration/len(companies):.1f} seconds")
 
-        # step 1
-        try:
-            save_company_result(collection, company_name, url, 'find_jobs_page_progress')
 
-            result = asyncio.run(find_jobs_page(url))
-
-            if result and result.has_jobs_page:
-                print(f"Found jobs page for {company_name}")
-                print(result.jobs_page_url)
-                save_company_result(collection, company_name, url, 'find_jobs_page_complete', 
-                                  jobs=[], 
-                                  has_job_page=result.has_jobs_page, 
-                                  jobs_page_url=result.jobs_page_url)
-            else:
-                print("No jobs page found")
-                save_company_result(collection, company_name, url, 'find_jobs_page_not_found', 
-                                  jobs=[], 
-                                  has_job_page=result.has_jobs_page, 
-                                  error_message='No jobs page found')
-
-        except Exception as e:
-            print(f"Failed to process {company_name}: {e}")
-            traceback.print_exc()
-            save_company_result(collection, company_name, url, 'find_jobs_page_failed', error_message=str(e)) 
-
-        if result.has_jobs_page and result.jobs_page_url:
-            # step 2
-            try:
-                save_company_result(collection, company_name, url, 'extract_job_listings_progress')
-
-                result = asyncio.run(extract_job_listings(result.jobs_page_url))
-
-                if len(result) > 0:
-                    print(f"Found {len(result)} jobs for {company_name}")
-                    save_company_result(collection, company_name, url, 'extract_job_listings_complete', [job.model_dump() for job in result])
-                else:
-                    print("No results returned")
-                    error_msg = result.get('error', 'No jobs found')
-                    save_company_result(collection, company_name, url, 'extract_job_listings_no_jobs_found', [], error_msg)
-
-            except Exception as e:
-                print(f"Failed to process {company_name}: {e}")
-                traceback.print_exc()
-                save_company_result(collection, company_name, url, 'extract_job_listings_failed', error_message=str(e)) 
+if __name__ == "__main__":
+    asyncio.run(main()) 
