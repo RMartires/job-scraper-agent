@@ -22,6 +22,7 @@ os.environ["PLAYWRIGHT_BROWSERS_PATH"] = "/media/mats/3c24094c-800b-4576-a390-d2
 # Read environment variables
 load_dotenv()
 
+headless=True
 # this line auto-instruments Browser Use and any browser you use (local or remote)
 # Laminar.initialize(project_api_key=os.getenv('LMNR_PROJECT_API_KEY'), disable_batch=True, disabled_instruments={Instruments.BROWSER_USE})
 
@@ -178,7 +179,7 @@ async def extract_job_listings(url, return_string=False):
         viewport_size={'width': 1280, 'height': 720},
         user_data_dir=unique_profile,
         executable_path=CHROME_BIN,
-        headless=False,  # Let's see what's happening
+        headless=headless,  # Let's see what's happening
         chromium_sandbox=False,
         args=[
             "--no-sandbox",
@@ -246,7 +247,7 @@ async def find_jobs_page(url, return_string=False):
         viewport_size={'width': 1280, 'height': 720},
         user_data_dir=unique_profile,
         executable_path=CHROME_BIN,
-        headless=False,  # Let's see what's happening
+        headless=headless,  # Let's see what's happening
         chromium_sandbox=False,
         args=[
             "--no-sandbox",
@@ -351,7 +352,7 @@ async def process_batch(collection, batch, batch_num, total_batches):
     print(f"{'='*80}")
     
     # Create semaphore to limit concurrent operations within the batch
-    max_concurrent_per_batch = 3  # Process up to 2 companies simultaneously per batch
+    max_concurrent_per_batch = 1  # Process up to 2 companies simultaneously per batch
     semaphore = asyncio.Semaphore(max_concurrent_per_batch)
     
     async def process_with_semaphore(company):
@@ -394,7 +395,7 @@ async def main():
         return
     
     # Process in batches
-    batch_size = 5  # Adjust based on your system resources
+    batch_size = 1  # Adjust based on your system resources
     batches = [companies[i:i + batch_size] for i in range(0, len(companies), batch_size)]
     total_batches = len(batches)
     

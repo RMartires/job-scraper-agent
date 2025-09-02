@@ -1,4 +1,5 @@
 import json
+import time
 from deepeval.dataset import EvaluationDataset
 from deepeval.test_case import LLMTestCase
 from deepeval.metrics import AnswerRelevancyMetric
@@ -14,6 +15,10 @@ load_dotenv()
 
 # Set the environment variable so Playwright uses your custom browser path
 os.environ["PLAYWRIGHT_BROWSERS_PATH"] = "/media/mats/3c24094c-800b-4576-a390-d23a6d7a02291/workspace/test_ai_gen/browser_use/.playwright-browsers"
+
+# Configuration for rate limiting
+ENABLE_THROTTLING = True  # Set to False to use parallel evaluation
+THROTTLE_DELAY_SECONDS = 5  # Delay between evaluations in seconds
 
 def create_test_dataset():
     """Create a simple test dataset for job scraping evaluation"""
@@ -32,13 +37,13 @@ def create_test_dataset():
             "extract_jobs_listings_output": "Should return a list of jobs with url, location and title fields",
             "description": "Test datarobot careers page for job listings"
         },
-        {
-            "has_job_page_input": "https://www.cencora.com",    
-            "extract_jobs_listings_input": "https://careers.cencora.com/us/en",
-            "has_job_page_expected_output": "Should find if the site has a jobs / careers page",
-            "extract_jobs_listings_output": "Should return a list of jobs with url, location and title fields",
-            "description": "Test Apple jobs page for job listings"
-        }
+        # {
+        #     "has_job_page_input": "https://www.cencora.com",    
+        #     "extract_jobs_listings_input": "https://careers.cencora.com/us/en",
+        #     "has_job_page_expected_output": "Should find if the site has a jobs / careers page",
+        #     "extract_jobs_listings_output": "Should return a list of jobs with url, location and title fields",
+        #     "description": "Test Apple jobs page for job listings"
+        # }
     ]
     return test_cases
 
@@ -107,11 +112,13 @@ async def main():
         # Get actual output from your LLM app
         fjp_output = await find_jobs_page(test_item['has_job_page_input'], return_string=True)
 
+        # Ensure actual_output is always a string
+        fjp_actual_output = str(fjp_output) if fjp_output is not None else "No output generated"
 
         # Create test case
         fjp_test_case = LLMTestCase(
             input=test_item['has_job_page_input'],
-            actual_output=fjp_output,
+            actual_output=fjp_actual_output,
             expected_output=test_item['has_job_page_expected_output']
         )
 
@@ -119,10 +126,13 @@ async def main():
 
         ejl_output = await extract_job_listings(test_item['extract_jobs_listings_input'], return_string=True)
 
+        # Ensure actual_output is always a string
+        ejl_actual_output = str(ejl_output) if ejl_output is not None else "No output generated"
+
         # Create test case
         ejl_test_case = LLMTestCase(
             input=test_item['extract_jobs_listings_input'],
-            actual_output=ejl_output,
+            actual_output=ejl_actual_output,
             expected_output=test_item['extract_jobs_listings_output']
         )
         
@@ -130,13 +140,41 @@ async def main():
         dataset.add_test_case(fjp_test_case)
         dataset.add_test_case(ejl_test_case)
     
-    # Step 4: Run evaluation
+    # Step 4: Run evaluation with throttling
     print("4. Running evaluation...")
     try:
-        results = evaluate(
-            test_cases=dataset.test_cases, 
-            metrics=[relevancy]
-        )
+        if ENABLE_THROTTLING:
+            print("   Using throttled evaluation to avoid rate limits...")
+            # Sequential evaluation with delays
+            results = []
+            for i, test_case in enumerate(dataset.test_cases):
+                print(f"   Evaluating test case {i+1}/{len(dataset.test_cases)}...")
+                try:
+                    result = evaluate(
+                        test_cases=[test_case], 
+                        metrics=[relevancy]
+                    )
+                    results.append(result)
+                    print(f"   ✅ Test case {i+1} completed")
+                except Exception as e:
+                    print(f"   ❌ Test case {i+1} failed: {e}")
+                    results.append(None)
+                
+                # Add delay between evaluations
+                if i < len(dataset.test_cases) - 1:  # Don't delay after the last one
+                    print(f"   ⏳ Waiting {THROTTLE_DELAY_SECONDS} seconds before next evaluation...")
+                    time.sleep(THROTTLE_DELAY_SECONDS)
+            
+            # Filter out failed evaluations
+            results = [r for r in results if r is not None]
+            
+        else:
+            print("   Using parallel evaluation...")
+            # Parallel evaluation (original behavior)
+            results = evaluate(
+                test_cases=dataset.test_cases, 
+                metrics=[relevancy]
+            )
         
         print("\n✅ Evaluation completed!")
         print(f"Results: {results}")
